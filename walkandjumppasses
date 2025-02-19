@@ -1,0 +1,127 @@
+-- Services
+local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Constants
+local WALKING_GAMEPASS_ID = 1070483700
+local JUMPING_GAMEPASS_ID = 1070573285 
+local TEST_MODE = false  -- Force no gamepass for testing
+
+-- RemoteEvent for jump requests
+local JumpRequest = Instance.new("RemoteEvent")
+JumpRequest.Name = "JumpRequest"
+JumpRequest.Parent = ReplicatedStorage
+
+-- RemoteFunction to check jump permission
+local CanJumpCheck = Instance.new("RemoteFunction")
+CanJumpCheck.Name = "CanJumpCheck"
+CanJumpCheck.Parent = ReplicatedStorage
+
+-- Debug function
+local function debugPrint(message)
+	local timestamp = os.date("%X")
+	print("[" .. timestamp .. "] [MovementPass Debug]: " .. message)
+end
+
+debugPrint("Script started in TEST MODE - All players will be treated as not having passes")
+
+-- Function to check if player owns gamepass
+local function checkGamepass(player, gamepassId)
+	debugPrint("Checking gamepass " .. gamepassId .. " for player " .. player.Name)
+
+	if TEST_MODE then
+		debugPrint(player.Name .. " TEST MODE - treating as no pass")
+		return false
+	end
+
+	local hasPass = false
+	local success, result = pcall(function()
+		return MarketplaceService:UserOwnsGamePassAsync(player.UserId, gamepassId)
+	end)
+
+	if success then
+		hasPass = result
+		debugPrint(player.Name .. " gamepass " .. gamepassId .. " check result: " .. tostring(hasPass))
+	else
+		debugPrint("Error checking gamepass: " .. tostring(result))
+	end
+
+	return hasPass
+end
+
+-- Function to handle movement permissions
+local function setupMovementHandler(player)
+	debugPrint("Setting up movement handler for " .. player.Name)
+
+	player.CharacterAdded:Connect(function(character)
+		debugPrint("Character added for " .. player.Name)
+		local humanoid = character:WaitForChild("Humanoid")
+
+		-- Check walking gamepass
+		if not checkGamepass(player, WALKING_GAMEPASS_ID) then
+			humanoid.WalkSpeed = 0
+			debugPrint("Walking disabled for " .. player.Name)
+
+			humanoid:GetPropertyChangedSignal("MoveDirection"):Connect(function()
+				if humanoid.MoveDirection.Magnitude > 0 then
+					debugPrint(player.Name .. " attempted to walk")
+					MarketplaceService:PromptGamePassPurchase(player, WALKING_GAMEPASS_ID)
+				end
+			end)
+		else
+			humanoid.WalkSpeed = 16
+			debugPrint("Walking enabled for " .. player.Name)
+		end
+
+		-- Check jumping gamepass
+		debugPrint("Checking jumping permission for " .. player.Name)
+		if not checkGamepass(player, JUMPING_GAMEPASS_ID) then
+			humanoid.JumpHeight = 0
+			debugPrint("Jumping disabled for " .. player.Name)
+		else
+			humanoid.JumpHeight = 7.2
+			debugPrint("Jumping enabled for " .. player.Name)
+		end
+	end)
+end
+
+-- Handle jump requests
+JumpRequest.OnServerEvent:Connect(function(player)
+	debugPrint(player.Name .. " attempted to jump")
+
+	if not checkGamepass(player, JUMPING_GAMEPASS_ID) then
+		MarketplaceService:PromptGamePassPurchase(player, JUMPING_GAMEPASS_ID)
+	end
+end)
+
+-- Handle can jump checks
+CanJumpCheck.OnServerInvoke = function(player)
+	return checkGamepass(player, JUMPING_GAMEPASS_ID)
+end
+
+-- Handle new players
+Players.PlayerAdded:Connect(function(player)
+	debugPrint(player.Name .. " joined the game")
+	setupMovementHandler(player)
+end)
+
+-- Handle gamepass purchases
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, gamepassId, wasPurchased)
+	debugPrint("Purchase prompt finished for " .. player.Name)
+	debugPrint("Gamepass ID: " .. gamepassId .. ", Was purchased: " .. tostring(wasPurchased))
+
+	if wasPurchased and player.Character then
+		if gamepassId == WALKING_GAMEPASS_ID then
+			local humanoid = player.Character:FindFirstChild("Humanoid")
+			if humanoid then
+				humanoid.WalkSpeed = 16
+				debugPrint("Walking enabled for " .. player.Name .. " after purchase")
+			end
+		elseif gamepassId == JUMPING_GAMEPASS_ID then
+			debugPrint("Processing jump gamepass purchase for " .. player.Name)
+			-- Respawn to ensure everything is reset properly
+			player:LoadCharacter()
+		end
+	end
+end)
