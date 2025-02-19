@@ -1,0 +1,73 @@
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local MarketplaceService = game:GetService("MarketplaceService")
+
+local SWIMMING_GAMEPASS_ID = 1070418166 
+local TEST_MODE = false 
+
+local function isInWater(part)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Blacklist
+	params.FilterDescendantsInstances = {part.Parent}
+
+	local result = Workspace:Raycast(part.Position, Vector3.new(0, -10, 0), params)
+	return result and result.Material == Enum.Material.Water
+end
+
+local function hasSwimmingGamePass(player)
+	if TEST_MODE then
+		return false -- Always return false in test mode
+	else
+		local success, hasPass = pcall(function()
+			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, SWIMMING_GAMEPASS_ID)
+		end)
+		return success and hasPass
+	end
+end
+
+local function promptGamePassPurchase(player)
+	MarketplaceService:PromptGamePassPurchase(player, SWIMMING_GAMEPASS_ID)
+end
+
+local function onPlayerAdded(player)
+	player.CharacterAdded:Connect(function(character)
+		local humanoid = character:WaitForChild("Humanoid")
+		local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+
+		game:GetService("RunService").Heartbeat:Connect(function()
+			if isInWater(humanoidRootPart) then
+				if not hasSwimmingGamePass(player) then
+					humanoid.Health = 0
+					promptGamePassPurchase(player)
+					print(player.Name .. " died in water (no GamePass)")
+				else
+					print(player.Name .. " is swimming (has GamePass)")
+				end
+			end
+		end)
+	end)
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+
+for _, player in ipairs(Players:GetPlayers()) do
+	onPlayerAdded(player)
+end
+
+-- Command to toggle test mode
+local function onChatted(player, message)
+	if player.UserId == game.CreatorId then -- Only the game creator can use this command
+		if message:lower() == "/toggletestmode" then
+			TEST_MODE = not TEST_MODE
+			print("Test mode is now: " .. tostring(TEST_MODE))
+		end
+	end
+end
+
+Players.PlayerAdded:Connect(function(player)
+	player.Chatted:Connect(function(message)
+		onChatted(player, message)
+	end)
+end)
+
+print("Swimming GamePass script is running. Test mode: " .. tostring(TEST_MODE))
