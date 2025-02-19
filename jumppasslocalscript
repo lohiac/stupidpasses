@@ -1,0 +1,39 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local JumpRequest = ReplicatedStorage:WaitForChild("JumpRequest")
+local CanJumpCheck = ReplicatedStorage:WaitForChild("CanJumpCheck")
+
+local player = Players.LocalPlayer
+local canJump = false
+
+local function updateJumpAbility()
+	canJump = CanJumpCheck:InvokeServer()
+	if player.Character then
+		local humanoid = player.Character:FindFirstChild("Humanoid")
+		if humanoid then
+			humanoid.JumpHeight = canJump and 7.2 or 0
+		end
+	end
+end
+
+local function onJumpRequest()
+	if not canJump then
+		JumpRequest:FireServer()
+	end
+end
+
+UserInputService.JumpRequest:Connect(onJumpRequest)
+
+-- Update jump ability when character spawns
+player.CharacterAdded:Connect(updateJumpAbility)
+
+-- Initial check
+updateJumpAbility()
+
+-- Periodically check for changes (e.g., after purchase)
+while true do
+	wait(5)
+	updateJumpAbility()
+end
